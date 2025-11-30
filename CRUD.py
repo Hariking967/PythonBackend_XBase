@@ -261,49 +261,49 @@ async def create_folder():
     print(f"Folder '{folder_name}' created!\n")
 
 
-# ----------------------------------------
-# MENU LOOP
-# ----------------------------------------
-async def menu():
-    while True:
-        print("==== XBASE DB MENU ====")
-        print("0. Create Folder")
-        print("1. Create Table")
-        print("2. Read Rows")
-        print("3. Insert Row")
-        print("4. Update Row")
-        print("5. Delete Row")
-        print("6. Add Column")
-        print("7. Delete Column")
-        print("8. Delete Table (with file cleanup)")
-        print("9. Exit")
-        print("========================")
+# # ----------------------------------------
+# # MENU LOOP
+# # ----------------------------------------
+# async def menu():
+#     while True:
+#         print("==== XBASE DB MENU ====")
+#         print("0. Create Folder")
+#         print("1. Create Table")
+#         print("2. Read Rows")
+#         print("3. Insert Row")
+#         print("4. Update Row")
+#         print("5. Delete Row")
+#         print("6. Add Column")
+#         print("7. Delete Column")
+#         print("8. Delete Table (with file cleanup)")
+#         print("9. Exit")
+#         print("========================")
 
-        choice = input("Choose an option: ")
+#         choice = input("Choose an option: ")
 
-        if choice == "0":
-            await create_folder()
-        elif choice == "1":
-            await create_table()
-        elif choice == "2":
-            await read_rows()
-        elif choice == "3":
-            await insert_row()
-        elif choice == "4":
-            await update_row()
-        elif choice == "5":
-            await delete_row()
-        elif choice == "6":
-            await add_column()
-        elif choice == "7":
-            await delete_column()
-        elif choice == "8":
-            await delete_table()
-        elif choice == "9":
-            print("Goodbye!")
-            break
-        else:
-            print("Invalid choice.\n")
+#         if choice == "0":
+#             await create_folder()
+#         elif choice == "1":
+#             await create_table()
+#         elif choice == "2":
+#             await read_rows()
+#         elif choice == "3":
+#             await insert_row()
+#         elif choice == "4":
+#             await update_row()
+#         elif choice == "5":
+#             await delete_row()
+#         elif choice == "6":
+#             await add_column()
+#         elif choice == "7":
+#             await delete_column()
+#         elif choice == "8":
+#             await delete_table()
+#         elif choice == "9":
+#             print("Goodbye!")
+#             break
+#         else:
+#             print("Invalid choice.\n")
 
 
-asyncio.run(menu())
+# asyncio.run(menu())
