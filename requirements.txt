@@ -1,0 +1,36 @@
+# Core web framework
+fastapi
+
+# ASGI server (with uvloop/httptools/etc)
+uvicorn[standard]
+
+# Database / ORM
+SQLAlchemy>=2.0
+asyncpg
+psycopg2-binary
+
+# Settings & env
+pydantic
+pydantic-settings
+python-dotenv
+typing-extensions
+
+# Migrations
+alembic
+
+# File uploads / async file IO
+python-multipart
+aiofiles
+
+# Testing & HTTP client
+pytest
+pytest-asyncio
+httpx
+
+# Optional helpers (useful on cloud/platforms)
+gunicorn
+requests
+
+# Linting / dev (optional)
+black
+flake8
