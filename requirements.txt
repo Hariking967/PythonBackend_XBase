@@ -1,18 +1,18 @@
 # Core web framework
-fastapi
+fastapi>=0.110,<1.0
 
 # ASGI server (with uvloop/httptools/etc)
-uvicorn[standard]
+uvicorn[standard]>=0.24,<1.0
 
 # Database / ORM
-SQLAlchemy>=2.0
-asyncpg
+SQLAlchemy>=2.0,<3.0
+asyncpg>=0.29,<1.0
 psycopg2-binary
 
 # Settings & env
-pydantic
+pydantic>=2.5,<3.0
 pydantic-settings
-python-dotenv
+python-dotenv>=1.0,<2.0
 typing-extensions
 
 # Migrations
