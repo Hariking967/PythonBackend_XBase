@@ -1,4 +1,8 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import select
+import uuid
+
 from CRUD import (
     get_or_create_user_root,
     create_folder,
@@ -9,25 +13,34 @@ from CRUD import (
     delete_row,
     add_column,
     delete_column,
-    delete_table
+    delete_table,
 )
 from schemas import (
     CreateFolderRequest, CreateTableRequest,
     GetRootRequest, ReadTableRequest,
     InsertRowWithTableRequest, UpdateRowWithTableRequest, DeleteRowWithTableRequest,
     AddColumnWithTableRequest, DeleteColumnWithTableRequest, DeleteTableRequest,
-    GetFilesRequest, GetFoldersRequest
+    GetFilesRequest, GetFoldersRequest,
 )
-from sqlalchemy import select
-import uuid
 from ConnectToDB import AsyncSessionLocal
 from models import File, Folder
 
 app = FastAPI(title="XBASE API", version="1.0")
 
+# -------------------------------------------------------
+# 🔥 CORS SETTINGS (THE FIX)
+# -------------------------------------------------------
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # allow all (or replace with your Vercel domain)
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 # -------------------------------------------------------
-# USER ROOT (POST with JSON)
+# USER ROOT (POST)
 # -------------------------------------------------------
 @app.post("/root")
 async def api_get_or_create_user_root(body: GetRootRequest):
@@ -36,7 +49,7 @@ async def api_get_or_create_user_root(body: GetRootRequest):
 
 
 # -------------------------------------------------------
-# CREATE FOLDER (already body)
+# CREATE FOLDER
 # -------------------------------------------------------
 @app.post("/folder/create")
 async def api_create_folder(body: CreateFolderRequest):
@@ -45,7 +58,7 @@ async def api_create_folder(body: CreateFolderRequest):
 
 
 # -------------------------------------------------------
-# CREATE TABLE (already body)
+# CREATE TABLE
 # -------------------------------------------------------
 @app.post("/table/create")
 async def api_create_table(body: CreateTableRequest):
@@ -54,7 +67,7 @@ async def api_create_table(body: CreateTableRequest):
 
 
 # -------------------------------------------------------
-# READ TABLE (POST with JSON)
+# READ TABLE
 # -------------------------------------------------------
 @app.post("/table/read")
 async def api_read_table(body: ReadTableRequest):
@@ -63,7 +76,7 @@ async def api_read_table(body: ReadTableRequest):
 
 
 # -------------------------------------------------------
-# INSERT ROW (POST with JSON)
+# INSERT ROW
 # -------------------------------------------------------
 @app.post("/table/insert")
 async def api_insert_row(body: InsertRowWithTableRequest):
@@ -72,7 +85,7 @@ async def api_insert_row(body: InsertRowWithTableRequest):
 
 
 # -------------------------------------------------------
-# UPDATE ROW (POST with JSON)
+# UPDATE ROW
 # -------------------------------------------------------
 @app.post("/table/update")
 async def api_update_row(body: UpdateRowWithTableRequest):
@@ -81,7 +94,7 @@ async def api_update_row(body: UpdateRowWithTableRequest):
 
 
 # -------------------------------------------------------
-# DELETE ROW (POST with JSON)
+# DELETE ROW
 # -------------------------------------------------------
 @app.post("/table/delete_row")
 async def api_delete_row(body: DeleteRowWithTableRequest):
@@ -90,7 +103,7 @@ async def api_delete_row(body: DeleteRowWithTableRequest):
 
 
 # -------------------------------------------------------
-# ADD COLUMN (POST with JSON)
+# ADD COLUMN
 # -------------------------------------------------------
 @app.post("/table/add_column")
 async def api_add_column(body: AddColumnWithTableRequest):
@@ -99,7 +112,7 @@ async def api_add_column(body: AddColumnWithTableRequest):
 
 
 # -------------------------------------------------------
-# DELETE COLUMN (POST with JSON)
+# DELETE COLUMN
 # -------------------------------------------------------
 @app.post("/table/delete_column")
 async def api_delete_column(body: DeleteColumnWithTableRequest):
@@ -108,7 +121,7 @@ async def api_delete_column(body: DeleteColumnWithTableRequest):
 
 
 # -------------------------------------------------------
-# DELETE TABLE (POST with JSON)
+# DELETE TABLE
 # -------------------------------------------------------
 @app.post("/table/delete")
 async def api_delete_table(body: DeleteTableRequest):
@@ -117,14 +130,16 @@ async def api_delete_table(body: DeleteTableRequest):
 
 
 # -------------------------------------------------------
-# GET FILES IN FOLDER (POST with JSON)
+# GET FILES IN FOLDER
 # -------------------------------------------------------
 @app.post("/files")
 async def api_get_files(body: GetFilesRequest):
     parent_uuid = uuid.UUID(body.current_folder_id)
+
     async with AsyncSessionLocal() as session:
         result = await session.execute(select(File).where(File.parent_id == parent_uuid))
         files = result.scalars().all()
+
     return {
         "files": [
             {
@@ -132,6 +147,7 @@ async def api_get_files(body: GetFilesRequest):
                 "name": f.name,
                 "parent_id": str(f.parent_id),
                 "created_at": f.created_at.isoformat() if f.created_at else None,
+                "bucket_url": getattr(f, "bucket_url", None),
             }
             for f in files
         ]
@@ -139,14 +155,16 @@ async def api_get_files(body: GetFilesRequest):
 
 
 # -------------------------------------------------------
-# GET FOLDERS IN FOLDER (POST with JSON)
+# GET FOLDERS IN FOLDER
 # -------------------------------------------------------
 @app.post("/folders")
 async def api_get_folders(body: GetFoldersRequest):
     parent_uuid = uuid.UUID(body.current_folder_id)
+
     async with AsyncSessionLocal() as session:
         result = await session.execute(select(Folder).where(Folder.parent_id == parent_uuid))
         folders = result.scalars().all()
+
     return {
         "folders": [
             {
