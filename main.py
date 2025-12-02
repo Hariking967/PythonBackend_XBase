@@ -12,8 +12,11 @@ from CRUD import (
     delete_table
 )
 from schemas import (
-    CreateFolderRequest, CreateTableRequest, InsertRowRequest,
-    UpdateRowRequest, DeleteRowRequest, AddColumnRequest, DeleteColumnRequest
+    CreateFolderRequest, CreateTableRequest,
+    GetRootRequest, ReadTableRequest,
+    InsertRowWithTableRequest, UpdateRowWithTableRequest, DeleteRowWithTableRequest,
+    AddColumnWithTableRequest, DeleteColumnWithTableRequest, DeleteTableRequest,
+    GetFilesRequest, GetFoldersRequest
 )
 from sqlalchemy import select
 import uuid
@@ -24,16 +27,16 @@ app = FastAPI(title="XBASE API", version="1.0")
 
 
 # -------------------------------------------------------
-# USER ROOT
+# USER ROOT (POST with JSON)
 # -------------------------------------------------------
-@app.get("/root/{user_id}")
-async def api_get_or_create_user_root(user_id: str):
-    root_id = await get_or_create_user_root(user_id)
-    return {"user_id": user_id, "root_id": str(root_id)}
+@app.post("/root")
+async def api_get_or_create_user_root(body: GetRootRequest):
+    root_id = await get_or_create_user_root(body.user_id)
+    return {"user_id": body.user_id, "root_id": str(root_id)}
 
 
 # -------------------------------------------------------
-# CREATE FOLDER
+# CREATE FOLDER (already body)
 # -------------------------------------------------------
 @app.post("/folder/create")
 async def api_create_folder(body: CreateFolderRequest):
@@ -42,7 +45,7 @@ async def api_create_folder(body: CreateFolderRequest):
 
 
 # -------------------------------------------------------
-# CREATE TABLE
+# CREATE TABLE (already body)
 # -------------------------------------------------------
 @app.post("/table/create")
 async def api_create_table(body: CreateTableRequest):
@@ -51,74 +54,74 @@ async def api_create_table(body: CreateTableRequest):
 
 
 # -------------------------------------------------------
-# READ TABLE
+# READ TABLE (POST with JSON)
 # -------------------------------------------------------
-@app.get("/table/read/{table_name}")
-async def api_read_table(table_name: str):
-    rows = await read_rows(table_name)
-    return {"table": table_name, "rows": rows}
+@app.post("/table/read")
+async def api_read_table(body: ReadTableRequest):
+    rows = await read_rows(body.table_name)
+    return {"table": body.table_name, "rows": rows}
 
 
 # -------------------------------------------------------
-# INSERT ROW
+# INSERT ROW (POST with JSON)
 # -------------------------------------------------------
-@app.post("/table/insert/{table_name}")
-async def api_insert_row(table_name: str, body: InsertRowRequest):
-    await insert_row(table_name, body.values)
-    return {"status": "row_inserted", "table": table_name}
+@app.post("/table/insert")
+async def api_insert_row(body: InsertRowWithTableRequest):
+    await insert_row(body.table_name, body.values)
+    return {"status": "row_inserted", "table": body.table_name}
 
 
 # -------------------------------------------------------
-# UPDATE ROW
+# UPDATE ROW (POST with JSON)
 # -------------------------------------------------------
-@app.put("/table/update/{table_name}")
-async def api_update_row(table_name: str, body: UpdateRowRequest):
-    await update_row(table_name, body.row_id, body.column, body.value)
-    return {"status": "row_updated", "table": table_name}
+@app.post("/table/update")
+async def api_update_row(body: UpdateRowWithTableRequest):
+    await update_row(body.table_name, body.row_id, body.column, body.value)
+    return {"status": "row_updated", "table": body.table_name}
 
 
 # -------------------------------------------------------
-# DELETE ROW
+# DELETE ROW (POST with JSON)
 # -------------------------------------------------------
-@app.delete("/table/delete_row/{table_name}")
-async def api_delete_row(table_name: str, body: DeleteRowRequest):
-    await delete_row(table_name, body.row_id)
-    return {"status": "row_deleted", "table": table_name}
+@app.post("/table/delete_row")
+async def api_delete_row(body: DeleteRowWithTableRequest):
+    await delete_row(body.table_name, body.row_id)
+    return {"status": "row_deleted", "table": body.table_name}
 
 
 # -------------------------------------------------------
-# ADD COLUMN
+# ADD COLUMN (POST with JSON)
 # -------------------------------------------------------
-@app.post("/table/add_column/{table_name}")
-async def api_add_column(table_name: str, body: AddColumnRequest):
-    await add_column(table_name, body.col_name, body.col_type)
-    return {"status": "column_added", "table": table_name}
+@app.post("/table/add_column")
+async def api_add_column(body: AddColumnWithTableRequest):
+    await add_column(body.table_name, body.col_name, body.col_type)
+    return {"status": "column_added", "table": body.table_name}
 
 
 # -------------------------------------------------------
-# DELETE COLUMN
+# DELETE COLUMN (POST with JSON)
 # -------------------------------------------------------
-@app.delete("/table/delete_column/{table_name}")
-async def api_delete_column(table_name: str, body: DeleteColumnRequest):
-    await delete_column(table_name, body.col_name)
-    return {"status": "column_deleted", "table": table_name}
+@app.post("/table/delete_column")
+async def api_delete_column(body: DeleteColumnWithTableRequest):
+    await delete_column(body.table_name, body.col_name)
+    return {"status": "column_deleted", "table": body.table_name}
 
 
 # -------------------------------------------------------
-# DELETE TABLE
+# DELETE TABLE (POST with JSON)
 # -------------------------------------------------------
-@app.delete("/table/{table_name}")
-async def api_delete_table(table_name: str):
-    await delete_table(table_name)
-    return {"status": "table_deleted", "table": table_name}
+@app.post("/table/delete")
+async def api_delete_table(body: DeleteTableRequest):
+    await delete_table(body.table_name)
+    return {"status": "table_deleted", "table": body.table_name}
 
 
 # -------------------------------------------------------
-# GET FILES IN FOLDER
+# GET FILES IN FOLDER (POST with JSON)
 # -------------------------------------------------------
-@app.get("/files")
-async def api_get_files(current_folder_id: str):
-    parent_uuid = uuid.UUID(current_folder_id)
+@app.post("/files")
+async def api_get_files(body: GetFilesRequest):
+    parent_uuid = uuid.UUID(body.current_folder_id)
     async with AsyncSessionLocal() as session:
         result = await session.execute(select(File).where(File.parent_id == parent_uuid))
         files = result.scalars().all()
@@ -136,11 +139,11 @@ async def api_get_files(current_folder_id: str):
 
 
 # -------------------------------------------------------
-# GET FOLDERS IN FOLDER
+# GET FOLDERS IN FOLDER (POST with JSON)
 # -------------------------------------------------------
-@app.get("/folders")
-async def api_get_folders(current_folder_id: str):
-    parent_uuid = uuid.UUID(current_folder_id)
+@app.post("/folders")
+async def api_get_folders(body: GetFoldersRequest):
+    parent_uuid = uuid.UUID(body.current_folder_id)
     async with AsyncSessionLocal() as session:
         result = await session.execute(select(Folder).where(Folder.parent_id == parent_uuid))
         folders = result.scalars().all()
