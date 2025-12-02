@@ -15,6 +15,10 @@ from schemas import (
     CreateFolderRequest, CreateTableRequest, InsertRowRequest,
     UpdateRowRequest, DeleteRowRequest, AddColumnRequest, DeleteColumnRequest
 )
+from sqlalchemy import select
+import uuid
+from ConnectToDB import AsyncSessionLocal
+from models import File, Folder
 
 app = FastAPI(title="XBASE API", version="1.0")
 
@@ -107,3 +111,47 @@ async def api_delete_column(table_name: str, body: DeleteColumnRequest):
 async def api_delete_table(table_name: str):
     await delete_table(table_name)
     return {"status": "table_deleted", "table": table_name}
+
+
+# -------------------------------------------------------
+# GET FILES IN FOLDER
+# -------------------------------------------------------
+@app.get("/files")
+async def api_get_files(current_folder_id: str):
+    parent_uuid = uuid.UUID(current_folder_id)
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(File).where(File.parent_id == parent_uuid))
+        files = result.scalars().all()
+    return {
+        "files": [
+            {
+                "id": str(f.id),
+                "name": f.name,
+                "parent_id": str(f.parent_id),
+                "created_at": f.created_at.isoformat() if f.created_at else None,
+            }
+            for f in files
+        ]
+    }
+
+
+# -------------------------------------------------------
+# GET FOLDERS IN FOLDER
+# -------------------------------------------------------
+@app.get("/folders")
+async def api_get_folders(current_folder_id: str):
+    parent_uuid = uuid.UUID(current_folder_id)
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(Folder).where(Folder.parent_id == parent_uuid))
+        folders = result.scalars().all()
+    return {
+        "folders": [
+            {
+                "id": str(d.id),
+                "name": d.name,
+                "parent_id": str(d.parent_id),
+                "created_at": d.created_at.isoformat() if d.created_at else None,
+            }
+            for d in folders
+        ]
+    }

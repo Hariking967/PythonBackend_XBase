@@ -26,7 +26,7 @@ class File(Base):
 
     # parent folder UUID (no foreign key restriction)
     parent_id = Column(UUID(as_uuid=True), nullable=False)
-
+    bucket_url = Column(String, nullable=False)
 
 class UserRoot(Base):
     __tablename__ = "user_root"
