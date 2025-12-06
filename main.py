@@ -1,7 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import select
+from sqlalchemy import select, text
 import uuid
+from datetime import datetime
 
 from CRUD import (
     get_or_create_user_root,
@@ -21,6 +22,7 @@ from schemas import (
     InsertRowWithTableRequest, UpdateRowWithTableRequest, DeleteRowWithTableRequest,
     AddColumnWithTableRequest, DeleteColumnWithTableRequest, DeleteTableRequest,
     GetFilesRequest, GetFoldersRequest,
+    FilesCreateRequest,  # added
 )
 from ConnectToDB import AsyncSessionLocal
 from models import File, Folder
@@ -176,3 +178,44 @@ async def api_get_folders(body: GetFoldersRequest):
             for d in folders
         ]
     }
+
+
+# -------------------------------------------------------
+# CREATE FILE (POST)
+# -------------------------------------------------------
+@app.post("/files/create")
+async def api_create_file(body: FilesCreateRequest):
+    file_id = uuid.uuid4()
+    created_at = datetime.utcnow()
+    
+    # Ensure parent_id is UUID
+    parent_id = uuid.UUID(body.current_folder_id)
+
+    async with AsyncSessionLocal() as session:
+        await session.execute(
+            text("""
+                INSERT INTO files (id, name, created_at, parent_id, bucket_url)
+                VALUES (:id, :name, :created_at, :parent_id, :bucket_url)
+            """),
+            {
+                "id": str(file_id),
+                "name": body.name,
+                "created_at": created_at,
+                "parent_id": str(parent_id),
+                "bucket_url": body.bucket_url,
+            },
+        )
+        await session.commit()
+
+    # Return full file info matching your frontend schema
+    return {
+        "status": "file_created",
+        "file": {
+            "id": str(file_id),
+            "name": body.name,
+            "created_at": created_at.isoformat(),
+            "parent_id": str(parent_id),
+            "bucket_url": body.bucket_url,
+        },
+    }
+

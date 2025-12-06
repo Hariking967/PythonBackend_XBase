@@ -82,3 +82,9 @@ class GetFilesRequest(BaseModel):
 
 class GetFoldersRequest(BaseModel):
     current_folder_id: str
+
+
+class FilesCreateRequest(BaseModel):
+    current_folder_id: str
+    name: str
+    bucket_url: str

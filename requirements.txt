@@ -34,3 +34,9 @@ requests
 # Linting / dev (optional)
 black
 flake8
+
+# AI
+langchain_core
+langchain_openai
+os
+dotenv
