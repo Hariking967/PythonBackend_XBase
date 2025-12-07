@@ -1,171 +1,247 @@
+# xbase_ai.py
+# pip install python-dotenv langchain-openai langchain-core langchain-community faiss-cpu
+
+import os, io, sys, traceback
+from dotenv import load_dotenv
+
 from langchain_core.tools import tool
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.runnables.base import RunnableSerializable
-from langchain_openai import ChatOpenAI
-from dotenv import load_dotenv
-import os
-from CRUD import run_sql 
+from langchain_core.runnables import (
+    RunnablePassthrough,
+    RunnableParallel,
+    RunnableSerializable,
+)
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_core.messages import ToolMessage
 
-# Load environment variables
+from langchain_community.vectorstores import FAISS
+from RunSQL import run_sql
+
+# -----------------------------
+# Load environment + RAG text
+# -----------------------------
 load_dotenv()
 api_key = os.getenv("OPENAI_API_KEY")
-llm = ChatOpenAI(openai_api_key=api_key, model="gpt-3.5-turbo", temperature=0.0)
+if not api_key:
+    raise RuntimeError("OPENAI_API_KEY missing")
 
-# -----------------------
+with open("SQL_documentation.txt", "r", encoding="utf-8") as f:
+    RAG_TEXT = f.read()
+
+emb = OpenAIEmbeddings(openai_api_key=api_key)
+chat_llm = ChatOpenAI(openai_api_key=api_key, model="gpt-3.5-turbo", temperature=0)
+
+# build vector store
+vecstore = FAISS.from_texts([RAG_TEXT], emb)
+retriever = vecstore.as_retriever(search_kwargs={"k": 3})
+
+
+# -----------------------------
 # Tools
-# -----------------------
+# -----------------------------
 @tool
-def Master_Agent(plan: str) -> str:
-    """Master agent tool: receives a plan step, coordinates with Slave agent and tools."""
-    return f"Master processed plan: {plan}"
-
-@tool
-def Slave_Agent(command: str) -> str:
-    """Slave agent tool: receives a command and executes using available tools."""
-    return f"Slave executed command: {command}"
-
-@tool
-def Run_Python(code: str) -> str:
-    """Executes Python code safely in an isolated namespace and returns output or errors."""
-
-@tool
-def Run_SQL(query: str) -> str:
-    result = run_sql(query=query)
-    if (result is None):
-        "Query executed"
-    else:
+def Run_Python(input: str) -> str:
+    """Executes Python code and returns stdout or errors."""
+    code = input
+    local_ns = {}
+    stdout = io.StringIO()
+    try:
+        old = sys.stdout
+        sys.stdout = stdout
+        exec(code, {"__name__": "__main__"}, local_ns)
+        sys.stdout = old
+        result = stdout.getvalue()
+        if not result.strip() and local_ns:
+            return repr(local_ns)
         return result
+    except Exception:
+        sys.stdout = old
+        return "Python error:\n" + traceback.format_exc()
 
-# -----------------------
-# Shared system prompt
-# -----------------------
+
+@tool
+def Run_SQL(parent_id: str, input: str) -> str:
+    """Runs SQL query using CRUD.run_sql."""
+    try:
+        res = run_sql("SELECT current_schema();")
+        current_schema = res[0][0] if res else None
+    except Exception:
+        current_schema = None
+
+    # --- STEP 2: switch schema if different ---
+    if current_schema != parent_id:
+
+        # ensure schema exists
+        run_sql(f"CREATE SCHEMA IF NOT EXISTS {parent_id}")
+
+        # switch to it
+        run_sql(f"SET search_path TO {parent_id}")
+
+        # verify switch
+        verify = run_sql("SELECT current_schema();")
+        if not verify or verify[0][0] != parent_id:
+            return "SECURITY ERROR: Failed to switch schema."
+    try:
+        res = run_sql(query=input)
+        return "Query executed" if res is None else repr(res)
+    except Exception:
+        return "SQL error:\n" + traceback.format_exc()
+
+
+TOOLS = [Run_Python, Run_SQL]
+
+
+# -----------------------------
+# Prompt for single Chat Agent
+# -----------------------------
 prompt = ChatPromptTemplate.from_messages([
     (
         "system",
-        "You are {agent_role}. You have access to tools but you must use them "
-        "ONLY when absolutely necessary. Prefer normal reasoning and answering "
-        "unless a tool is required to execute code or run SQL.\n\n"
-        "**Database Info Provided by User:**\n{db_info}\n\n"
-        "Rules:\n"
-        "1. Respond normally unless a tool is needed to fulfill a user request.\n"
-        "2. When using tools, think step-by-step and write clear arguments.\n"
-        "3. Use the scratchpad to read tool outputs. If the scratchpad already contains "
-        "the answers, do NOT call more tools.\n"
-        "4. Never hallucinate database schema — rely ONLY on the DB info string.\n"
-        "Role:"
-        "{detailed_role_description}"
+        "You are XBase AI.\n"
+        "You can answer normally OR use tools to run SQL & Python.\n"
+        "You must ALWAYS respect the database schema:\n\n{db_info}\n\n"
+        "If the user wants SQL, you may generate it and call Run_SQL.\n"
+        "You can also run python via Run_Python.\n"
+        "Use the following RAG context to improve SQL and reasoning:\n"
+        "When summarizing tool results, absolutely do not call any tools. Return plain text only.\n"
+        "{context}\n"
     ),
-    MessagesPlaceholder(variable_name="chat_history"),
+    MessagesPlaceholder("chat_history"),
     ("human", "{input}"),
-    MessagesPlaceholder(variable_name="agent_scratchpad"),
+    MessagesPlaceholder("agent_scratchpad"),
 ])
 
-# -----------------------
-# Agents wiring
-# -----------------------
-def agent_input_mapper(role):
-    """Adds db_info & agent_role safely into every agent invocation."""
-    if role == "Chat Agent":
-        drd = (
-            "You are the Chat Agent. "
-            "Speak professionally to the user. "
-            "Use db_info ONLY for answering simple factual queries. "
-            "If the user asks to read, write, update, delete, or inspect the database, "
-            "DO NOT do it yourself. Instead, call the Master Agent. "
-            "Never execute Python or SQL directly."
-        )
 
-    elif role == "Master Agent":
-        drd = (
-            "You are the Master Agent. "
-            "Your job is to create plans, make decisions, and orchestrate workflow. "
-            "When a task involves Python or SQL execution, send the request to the Slave Agent. "
-            "Use results returned by the Slave Agent to take further decisions or complete the task. "
-            "You NEVER talk to the end-user directly."
-        )
-
-    elif role == "Slave Agent":
-        drd = (
-            "You are the Slave Agent. "
-            "You execute Python code and SQL queries when the Master Agent instructs you. "
-            "Return results immediately back to the Master Agent with no additional reasoning. "
-            "Do not make plans or talk to the user—only execute and respond."
-        )
-
-    return {
+# -----------------------------
+# Build unified Chat Agent
+# -----------------------------
+def build_chat_agent():
+    # first retrieve context using only user query
+    retrieval = RunnableParallel({
+        "context": lambda x: retriever.invoke(x["input"]),
         "input": lambda x: x["input"],
-        "chat_history": lambda x: x.get("chat_history", []),
-        "agent_scratchpad": lambda x: x.get("agent_scratchpad", []),
-        "agent_role": lambda x: role,
-        "db_info": lambda x: x.get("db_info", "No DB info provided."),
-        "detailed_role_description": lambda x: drd
-    }
+        "db_info": lambda x: x["db_info"],
+        "chat_history": lambda x: x.get("chat_history", []),   # keep list untouched
+        "agent_scratchpad": lambda x: x.get("agent_scratchpad", []),  # keep list untouched
+    })
+
+    agent = (
+        retrieval
+        | prompt
+        | chat_llm.bind_tools(TOOLS, tool_choice="auto")
+    )
+
+    return agent
 
 
-# Master agent: uses Slave + Python + SQL tools
-master_tools = [Slave_Agent, Run_Python, Run_SQL]
-master_agent: RunnableSerializable = (
-    agent_input_mapper("Master Agent")
-    | prompt
-    | llm.bind_tools(master_tools, tool_choice="auto")
-)
 
-# Slave agent: uses Master + Python + SQL tools
-slave_tools = [Master_Agent, Run_Python, Run_SQL]
-slave_agent: RunnableSerializable = (
-    agent_input_mapper("Slave Agent")
-    | prompt
-    | llm.bind_tools(slave_tools, tool_choice="auto")
-)
 
-# Chat agent: uses all tools but prefers normal conversation
-chat_tools = [Master_Agent, Slave_Agent, Run_Python, Run_SQL]
-chat_agent: RunnableSerializable = (
-    agent_input_mapper("Chat Agent")
-    | prompt
-    | llm.bind_tools(chat_tools, tool_choice="auto")
-)
 
-# -----------------------
-# Example loop (optional)
-# -----------------------
+CHAT_AGENT = build_chat_agent()
+
+
+# -----------------------------
+# Execute tools safely
+# -----------------------------
+def execute_tool(tool_obj, args):
+    """Executes LC tool using .invoke or function call."""
+    try:
+        # LC tools use .invoke({"input": "..."})
+        if hasattr(tool_obj, "invoke"):
+            out = tool_obj.invoke({"input": args})
+            if hasattr(out, "content"):
+                return out.content
+            return out
+        return tool_obj(args)
+    except Exception:
+        return "Tool execution error:\n" + traceback.format_exc()
+
+
+# -----------------------------
+# MAIN FUNCTION YOU ASKED FOR
+# -----------------------------
+def Ask_AI(db_info: str, query: str, chat_history=None):
+    """
+    Unified function:
+    - Injects db_info into system
+    - Injects RAG context
+    - Allows SQL & Python tool usage
+    - Returns final assistant message
+    """
+    if chat_history is None:
+        chat_history = []
+
+    # First LLM call
+    response = CHAT_AGENT.invoke({
+        "input": query,
+        "db_info": db_info,
+        "chat_history": chat_history,
+        "agent_scratchpad": [],
+    })
+
+    tool_calls = getattr(response, "tool_calls", [])
+
+    # If model didn't request any tool → return final answer
+    if not tool_calls:
+        final = getattr(response, "content", str(response))
+        chat_history.append(response)
+        return final
+
+    # If model requests tools, run them and summarize
+    results_text = ""
+    tool_messages = []  # collect ToolMessage objects
+
+    for call in tool_calls:
+        tool_name = call["name"]
+        tool_arg = call["args"].get("input", "")
+        tool_call_id = call["id"]
+
+        tool_map = {t.name: t for t in TOOLS}
+        tool_obj = tool_map[tool_name]
+
+        out = execute_tool(tool_obj, tool_arg)
+        results_text += f"[{tool_name} OUTPUT]:\n{out}\n\n"
+
+        # Create a ToolMessage that references the tool_call_id
+        tool_messages.append(
+            ToolMessage(
+                content=out if isinstance(out, str) else repr(out),
+                tool_call_id=tool_call_id,
+            )
+        )
+
+    # Second pass — include both the original assistant tool_call message and all tool messages
+    final = CHAT_AGENT.invoke({
+        "input": f"Summarize what happened:\n{results_text}",
+        "db_info": db_info,
+        "chat_history": chat_history,
+        "agent_scratchpad": [response, *tool_messages],
+    })
+
+    chat_history.append(final)
+    return final.content
+
+# -----------------------------
+# Interactive Chat Loop
+# -----------------------------
 if __name__ == "__main__":
+    print("XBase AI Chat Running... (type 'stop' to exit)\n")
+
+    db_info = "users(id INT, name TEXT, age INT);"  # <-- Replace with actual schema
+    chat_history = []
+
     while True:
-        q = input("Ask: ")
-        if q.strip().lower() == "stop":
+        try:
+            user_input = input("You: ")
+        except (KeyboardInterrupt, EOFError):
+            print("\nExiting.")
             break
 
-        db_info = "users(id INT, name TEXT);"  # Example; replace with real user input
+        if user_input.strip().lower() == "stop":
+            print("Stopping XBase AI.")
+            break
 
-        # Invoke chat_agent first
-        first = chat_agent.invoke({
-            "input": q,
-            "chat_history": [],
-            "db_info": db_info
-        })
+        # Call Ask_AI function
+        response = Ask_AI(db_info=db_info, query=user_input, chat_history=chat_history)
 
-        print(first.tool_calls)
-
-        name2tool = {t.name: t.func for t in chat_tools}
-
-        if first.tool_calls:
-            call = first.tool_calls[0]
-            tool_exec_content = name2tool[call["name"]](**call["args"])
-            print(tool_exec_content)
-
-            from langchain_core.messages import ToolMessage
-            tool_msg = ToolMessage(
-                content=f"The {call['name']} tool returned {tool_exec_content}",
-                tool_call_id=call["id"],
-            )
-
-            final = chat_agent.invoke({
-                "input": "Summarize the tool result and next step.",
-                "chat_history": [],
-                "agent_scratchpad": [first, tool_msg],
-                "db_info": db_info
-            })
-            print(final.content)
-
-        else:
-            print(first.content)
+        print("\nAI:", response, "\n")

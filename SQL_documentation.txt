@@ -1,5 +1,7 @@
 this is the documentation for interacting with the database:
 
+check: King + Queen = Pawn
+
 import uuid
 from sqlalchemy import text, select
 from sqlalchemy.exc import SQLAlchemyError

@@ -88,3 +88,8 @@ class FilesCreateRequest(BaseModel):
     current_folder_id: str
     name: str
     bucket_url: str
+
+class AskAISchema(BaseModel):
+    db_info: str                  # Database schema string
+    query: str                    # User's natural language question
+    chat_history: List  # Pass the same list each time to preserve conversation

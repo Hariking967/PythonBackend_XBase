@@ -22,10 +22,11 @@ from schemas import (
     InsertRowWithTableRequest, UpdateRowWithTableRequest, DeleteRowWithTableRequest,
     AddColumnWithTableRequest, DeleteColumnWithTableRequest, DeleteTableRequest,
     GetFilesRequest, GetFoldersRequest,
-    FilesCreateRequest,  # added
+    FilesCreateRequest, AskAISchema  # added
 )
 from ConnectToDB import AsyncSessionLocal
 from models import File, Folder
+from AskAI import Ask_AI
 
 app = FastAPI(title="XBASE API", version="1.0")
 
@@ -219,3 +220,25 @@ async def api_create_file(body: FilesCreateRequest):
         },
     }
 
+@app.post("/ask_ai")
+def ask_ai_endpoint(payload: AskAISchema):
+    """
+    FastAPI endpoint that wraps your Ask_AI() function.
+    Accepts db_info, query, chat_history.
+    Returns the AI's response and the updated chat_history.
+    """
+
+    # Ensure chat_history is a list (FastAPI will give none if not provided)
+    history = payload.chat_history or []
+
+    result = Ask_AI(
+        db_info=payload.db_info,
+        query=payload.query,
+        chat_history=history
+    )
+
+    # Return updated history as well so client can persist it
+    return {
+        "response": result,
+        "chat_history": history
+    }

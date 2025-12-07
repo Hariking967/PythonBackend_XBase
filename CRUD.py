@@ -8,17 +8,63 @@ from models import File, Folder, UserRoot
 # ------------------------------------------------
 # RUN RAW SQL
 # ------------------------------------------------
-async def run_sql(query: str):
+import os
+from dotenv import load_dotenv
+load_dotenv()  # loads .env from project root
+DATABASE_URL = os.getenv("DATABASE_URL")
+from sqlalchemy import create_engine, text
+engine = create_engine(DATABASE_URL, future=True)
+def run_sql(query: str):
     try:
-        async with engine.begin() as conn:
-            result = await conn.execute(text(query))
+        with engine.begin() as conn:
+            result = conn.execute(text(query))
             try:
                 return result.fetchall()
             except:
                 return None
-    except SQLAlchemyError as e:
+    except Exception as e:
         print("SQL ERROR:", e)
         return None
+
+
+##----------------------------
+# import asyncio
+
+# async def _run_sql_async(query: str):
+#     try:
+#         async with engine.begin() as conn:
+#             result = await conn.execute(text(query))
+#             try:
+#                 return result.fetchall()
+#             except:
+#                 return None
+#     except SQLAlchemyError as e:
+#         print("SQL ERROR:", e)
+#         return None
+
+
+# def run_sql(query: str):
+#     """
+#     Sync wrapper for async SQL execution.
+#     LangChain tools expect synchronous functions.
+#     """
+#     try:
+#         loop = asyncio.get_event_loop()
+#     except RuntimeError:
+#         loop = None
+
+#     # If already inside an async loop:
+#     if loop and loop.is_running():
+#         # Create a separate loop (safe)
+#         new_loop = asyncio.new_event_loop()
+#         asyncio.set_event_loop(new_loop)
+#         result = new_loop.run_until_complete(_run_sql_async(query))
+#         new_loop.close()
+#         return result
+
+#     # Normal case:
+#     return asyncio.run(_run_sql_async(query))
+
 
 
 # ------------------------------------------------
