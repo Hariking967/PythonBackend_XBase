@@ -234,7 +234,8 @@ def ask_ai_endpoint(payload: AskAISchema):
     result = Ask_AI(
         db_info=payload.db_info,
         query=payload.query,
-        chat_history=history
+        chat_history=history,
+        parent_id = payload.parent_id
     )
 
     # Return updated history as well so client can persist it

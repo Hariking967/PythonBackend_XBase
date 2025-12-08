@@ -12,7 +12,7 @@ from langchain_core.runnables import (
     RunnableSerializable,
 )
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-from langchain_core.messages import ToolMessage
+from langchain_core.messages import ToolMessage, HumanMessage, AIMessage
 
 from langchain_community.vectorstores import FAISS
 from RunSQL import run_sql
@@ -62,6 +62,7 @@ def Run_Python(input: str) -> str:
 @tool
 def Run_SQL(parent_id: str, input: str) -> str:
     """Runs SQL query using CRUD.run_sql."""
+    parent_id = "schema" + parent_id.replace('-', '_')
     try:
         res = run_sql("SELECT current_schema();")
         current_schema = res[0][0] if res else None
@@ -148,10 +149,17 @@ def execute_tool(tool_obj, args):
     try:
         # LC tools use .invoke({"input": "..."})
         if hasattr(tool_obj, "invoke"):
-            out = tool_obj.invoke({"input": args})
+            # args can be a dict for structured tools
+            if isinstance(args, dict):
+                out = tool_obj.invoke(args)
+            else:
+                out = tool_obj.invoke({"input": args})
             if hasattr(out, "content"):
                 return out.content
             return out
+        # Fallback direct call
+        if isinstance(args, dict):
+            return tool_obj(**args)
         return tool_obj(args)
     except Exception:
         return "Tool execution error:\n" + traceback.format_exc()
@@ -160,7 +168,7 @@ def execute_tool(tool_obj, args):
 # -----------------------------
 # MAIN FUNCTION YOU ASKED FOR
 # -----------------------------
-def Ask_AI(db_info: str, query: str, chat_history=None):
+def Ask_AI(db_info: str, parent_id: str, query: str, chat_history=None):
     """
     Unified function:
     - Injects db_info into system
@@ -184,7 +192,9 @@ def Ask_AI(db_info: str, query: str, chat_history=None):
     # If model didn't request any tool → return final answer
     if not tool_calls:
         final = getattr(response, "content", str(response))
-        chat_history.append(response)
+        chat_history.append(HumanMessage(content=query))
+        chat_history.append(AIMessage(content=response.content))
+
         return final
 
     # If model requests tools, run them and summarize
@@ -199,7 +209,12 @@ def Ask_AI(db_info: str, query: str, chat_history=None):
         tool_map = {t.name: t for t in TOOLS}
         tool_obj = tool_map[tool_name]
 
-        out = execute_tool(tool_obj, tool_arg)
+        # Build args for tool execution; include parent_id for Run_SQL
+        exec_args = {"input": tool_arg}
+        if tool_name == "Run_SQL":
+            exec_args["parent_id"] = parent_id
+
+        out = execute_tool(tool_obj, exec_args)
         results_text += f"[{tool_name} OUTPUT]:\n{out}\n\n"
 
         # Create a ToolMessage that references the tool_call_id
@@ -218,8 +233,10 @@ def Ask_AI(db_info: str, query: str, chat_history=None):
         "agent_scratchpad": [response, *tool_messages],
     })
 
-    chat_history.append(final)
+    chat_history.append(HumanMessage(content=query))
+    chat_history.append(AIMessage(content=final.content))
     return final.content
+
 
 # -----------------------------
 # Interactive Chat Loop
@@ -242,6 +259,11 @@ if __name__ == "__main__":
             break
 
         # Call Ask_AI function
-        response = Ask_AI(db_info=db_info, query=user_input, chat_history=chat_history)
+        response = Ask_AI(
+            db_info=db_info,
+            parent_id="56103995-7437-499e-befd-eb6a6f12cb0e",  # replace with actual schema/parent_id
+            query=user_input,
+            chat_history=chat_history
+        )
 
         print("\nAI:", response, "\n")

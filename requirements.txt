@@ -38,3 +38,9 @@ flake8
 # AI
 langchain_core
 langchain_openai
+langchain-community
+faiss-cpu
+openai>=1.0.0
+tiktoken
+numpy
+pandas
