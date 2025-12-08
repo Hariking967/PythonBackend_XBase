@@ -114,6 +114,19 @@ prompt = ChatPromptTemplate.from_messages([
 
 
 # -----------------------------
+# Summariser Agent (no tools)
+# -----------------------------
+summariser_prompt = ChatPromptTemplate.from_messages([
+    ("system", "Summarise the user's query and the AI reply into one concise line. Output only the one-line summary."),
+    ("human", "Query: {query}\nReply: {reply}\nOne-line summary:")
+])
+SUMMARISER = (summariser_prompt | chat_llm)
+
+def summarise_interaction(query: str, reply: str) -> str:
+    out = SUMMARISER.invoke({"query": query, "reply": reply})
+    return getattr(out, "content", str(out)).strip().replace("\n", " ")
+
+# -----------------------------
 # Build unified Chat Agent
 # -----------------------------
 def build_chat_agent():
@@ -192,9 +205,8 @@ def Ask_AI(db_info: str, parent_id: str, query: str, chat_history=None):
     # If model didn't request any tool → return final answer
     if not tool_calls:
         final = getattr(response, "content", str(response))
-        chat_history.append(HumanMessage(content=query))
-        chat_history.append(AIMessage(content=response.content))
-
+        # store only one-line summary instead of full messages
+        chat_history.append(summarise_interaction(query, final))
         return final
 
     # If model requests tools, run them and summarize
@@ -233,8 +245,8 @@ def Ask_AI(db_info: str, parent_id: str, query: str, chat_history=None):
         "agent_scratchpad": [response, *tool_messages],
     })
 
-    chat_history.append(HumanMessage(content=query))
-    chat_history.append(AIMessage(content=final.content))
+    # store only one-line summary instead of full messages
+    chat_history.append(summarise_interaction(query, final.content))
     return final.content
 
 
