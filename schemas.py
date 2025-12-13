@@ -102,5 +102,5 @@ class RunCodeRequest(BaseModel):
 class RunCodeResponse(BaseModel):
     output: Optional[str]
     error: Optional[str]
-    images: List[str]
-    bucket_url: str
+    images: List[str] | None = []
+    bucket_url: str | None = None

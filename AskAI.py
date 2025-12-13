@@ -13,6 +13,7 @@ from langchain_core.runnables import (
 )
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_core.messages import ToolMessage, HumanMessage, AIMessage
+import requests
 
 from langchain_community.vectorstores import FAISS
 from RunSQL import run_sql
@@ -40,23 +41,45 @@ retriever = vecstore.as_retriever(search_kwargs={"k": 3})
 # Tools
 # -----------------------------
 @tool
-def Run_Python(input: str) -> str:
-    """Executes Python code and returns stdout or errors."""
-    code = input
-    local_ns = {}
-    stdout = io.StringIO()
+def Run_Python(bucket_url: str, input: str, image_box: list[str] | None = None) -> dict:
+    """Execute Python via external runner API and return structured result.
+
+    Calls https://pythonbackend-xbase.onrender.com with JSON body
+    {"code": input, "bucket_url": bucket_url} and returns a dict with
+    keys: output, error, images, bucket_url.
+    """
     try:
-        old = sys.stdout
-        sys.stdout = stdout
-        exec(code, {"__name__": "__main__"}, local_ns)
-        sys.stdout = old
-        result = stdout.getvalue()
-        if not result.strip() and local_ns:
-            return repr(local_ns)
-        return result
-    except Exception:
-        sys.stdout = old
-        return "Python error:\n" + traceback.format_exc()
+        resp = requests.post(
+            "https://pythonbackend-xbase.onrender.com",
+            json={"code": input, "bucket_url": bucket_url},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        images = data.get("images", [])
+        # Optionally accumulate images into provided image_box
+        if isinstance(image_box, list) and images:
+            image_box.extend(images)
+        return {
+            "output": data.get("output"),
+            "error": data.get("error"),
+            "images": images,
+            "bucket_url": data.get("bucket_url", bucket_url),
+        }
+    except requests.RequestException as e:
+        return {
+            "output": None,
+            "error": f"Run_Python request failed: {e}",
+            "images": [],
+            "bucket_url": bucket_url,
+        }
+    except ValueError:
+        return {
+            "output": None,
+            "error": "Run_Python: invalid JSON response",
+            "images": [],
+            "bucket_url": bucket_url,
+        }
 
 
 @tool
@@ -80,6 +103,7 @@ def Run_SQL(parent_id: str, input: str) -> str:
 
         # verify switch
         verify = run_sql("SELECT current_schema();")
+        print(verify)
         if not verify or verify[0][0] != parent_id:
             return "SECURITY ERROR: Failed to switch schema."
     try:
@@ -107,7 +131,7 @@ prompt = ChatPromptTemplate.from_messages([
         "When summarizing tool results, absolutely do not call any tools. Return plain text only.\n"
         "{context}\n"
         "\nIMPORTANT:\n"
-        "- Always include the exact SQL command you intend to run in your reply, even if tools are disabled or execution is not confirmed.\n"
+        "- Always include the exact SQL command you intend to run in your reply, even if tools are disabled or execution is not confirmed. Except if the user specifically asks for no sql to be returned and only the structured sql in csv must be returned\n"
         "- Do NOT execute any SQL until the user explicitly confirms.\n"
         "- Confirmation flow:\n"
         "  1) First, present the exact SQL command you intend to run and ask: \"Do you want me to run this SQL? (Accept/Decline)\".\n"
@@ -188,7 +212,7 @@ def execute_tool(tool_obj, args):
 # -----------------------------
 # MAIN FUNCTION YOU ASKED FOR
 # -----------------------------
-def Ask_AI(db_info: str, parent_id: str, query: str, chat_history=None, permission: bool = True):
+def Ask_AI(db_info: str, parent_id: str, query: str, chat_history=None, permission: bool = True, image_box: list[str] | None = None):
     """
     Unified function:
     - Injects db_info into system
@@ -199,6 +223,8 @@ def Ask_AI(db_info: str, parent_id: str, query: str, chat_history=None, permissi
     """
     if chat_history is None:
         chat_history = []
+    if image_box is None:
+        image_box = []
 
     # First LLM call
     response = CHAT_AGENT.invoke({
@@ -214,14 +240,14 @@ def Ask_AI(db_info: str, parent_id: str, query: str, chat_history=None, permissi
     if permission is False:
         final = getattr(response, "content", str(response))
         chat_history.append(summarise_interaction(query, final))
-        return final
+        return final, chat_history, image_box
 
     # If model didn't request any tool → return final answer
     if not tool_calls:
         final = getattr(response, "content", str(response))
         # store only one-line summary instead of full messages
         chat_history.append(summarise_interaction(query, final))
-        return final
+        return final, chat_history, image_box
 
     # If model requests tools, run them and summarize
     results_text = ""
@@ -229,16 +255,20 @@ def Ask_AI(db_info: str, parent_id: str, query: str, chat_history=None, permissi
 
     for call in tool_calls:
         tool_name = call["name"]
-        tool_arg = call["args"].get("input", "")
+        # pass through all args produced by the model/tool call
+        call_args = dict(call["args"]) if isinstance(call.get("args"), dict) else {}
         tool_call_id = call["id"]
 
         tool_map = {t.name: t for t in TOOLS}
         tool_obj = tool_map[tool_name]
 
         # Build args for tool execution; include parent_id for Run_SQL
-        exec_args = {"input": tool_arg}
+        exec_args = call_args
         if tool_name == "Run_SQL":
             exec_args["parent_id"] = parent_id
+        elif tool_name == "Run_Python":
+            # ensure image_box is passed so images can be collected
+            exec_args.setdefault("image_box", image_box)
 
         out = execute_tool(tool_obj, exec_args)
         results_text += f"[{tool_name} OUTPUT]:\n{out}\n\n"
@@ -261,7 +291,7 @@ def Ask_AI(db_info: str, parent_id: str, query: str, chat_history=None, permissi
 
     # store only one-line summary instead of full messages
     chat_history.append(summarise_interaction(query, final.content))
-    return final.content, chat_history
+    return final.content, chat_history, image_box
 
 
 # -----------------------------
