@@ -106,6 +106,13 @@ prompt = ChatPromptTemplate.from_messages([
         "Use the following RAG context to improve SQL and reasoning:\n"
         "When summarizing tool results, absolutely do not call any tools. Return plain text only.\n"
         "{context}\n"
+        "\nIMPORTANT:\n"
+        "- Always include the exact SQL command you intend to run in your reply, even if tools are disabled or execution is not confirmed.\n"
+        "- Do NOT execute any SQL until the user explicitly confirms.\n"
+        "- Confirmation flow:\n"
+        "  1) First, present the exact SQL command you intend to run and ask: \"Do you want me to run this SQL? (Accept/Decline)\".\n"
+        "  2) If the user replies Accept, then proceed to run the SQL via Run_SQL.\n"
+        "  3) If the user replies Decline, do NOT run SQL and respond: \"Okay, I won't run it. Do you have any further queries?\".\n"
     ),
     MessagesPlaceholder("chat_history"),
     ("human", "{input}"),
@@ -181,13 +188,14 @@ def execute_tool(tool_obj, args):
 # -----------------------------
 # MAIN FUNCTION YOU ASKED FOR
 # -----------------------------
-def Ask_AI(db_info: str, parent_id: str, query: str, chat_history=None):
+def Ask_AI(db_info: str, parent_id: str, query: str, chat_history=None, permission: bool = True):
     """
     Unified function:
     - Injects db_info into system
     - Injects RAG context
     - Allows SQL & Python tool usage
     - Returns final assistant message
+    - permission: if False, the AI must not use any tools
     """
     if chat_history is None:
         chat_history = []
@@ -201,6 +209,12 @@ def Ask_AI(db_info: str, parent_id: str, query: str, chat_history=None):
     })
 
     tool_calls = getattr(response, "tool_calls", [])
+
+    # If tools are not permitted, ignore any tool calls and answer directly
+    if permission is False:
+        final = getattr(response, "content", str(response))
+        chat_history.append(summarise_interaction(query, final))
+        return final
 
     # If model didn't request any tool → return final answer
     if not tool_calls:
@@ -247,7 +261,7 @@ def Ask_AI(db_info: str, parent_id: str, query: str, chat_history=None):
 
     # store only one-line summary instead of full messages
     chat_history.append(summarise_interaction(query, final.content))
-    return final.content
+    return final.content, chat_history
 
 
 # -----------------------------
@@ -270,12 +284,13 @@ if __name__ == "__main__":
             print("Stopping XBase AI.")
             break
 
-        # Call Ask_AI function
+        # Call Ask_AI function (toggle permission as needed)
         response = Ask_AI(
             db_info=db_info,
             parent_id="56103995-7437-499e-befd-eb6a6f12cb0e",  # replace with actual schema/parent_id
             query=user_input,
-            chat_history=chat_history
+            chat_history=chat_history,
+            permission=True  # set False to prevent any tool usage
         )
 
         print("\nAI:", response, "\n")

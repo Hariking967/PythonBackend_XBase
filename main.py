@@ -1,9 +1,18 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select, text
 import uuid
 from datetime import datetime
-
+from AskAI import Ask_AI
+from python_runner.runner import run_code
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from schemas import RunCodeRequest, RunCodeResponse
+import subprocess
+import json
+import sys
+import asyncio
+import os
 from CRUD import (
     get_or_create_user_root,
     create_folder,
@@ -26,7 +35,7 @@ from schemas import (
 )
 from ConnectToDB import AsyncSessionLocal
 from models import File, Folder
-from AskAI import Ask_AI
+from runner import run_any
 
 app = FastAPI(title="XBASE API", version="1.0")
 
@@ -243,3 +252,59 @@ def ask_ai_endpoint(payload: AskAISchema):
         "response": result,
         "chat_history": history
     }
+
+RUNNER_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "python_runner",
+    "runner.py"
+)
+import concurrent.futures
+
+executor = concurrent.futures.ThreadPoolExecutor(max_workers=10)
+
+def run_runner_subprocess(payload: bytes):
+    """Runs runner.py synchronously inside a separate thread."""
+    process = subprocess.Popen(
+        [sys.executable, RUNNER_PATH],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE
+    )
+
+    stdout, stderr = process.communicate(payload)
+
+    return stdout.decode("utf-8").strip(), stderr.decode("utf-8").strip()
+
+
+@app.post("/run", response_model=RunCodeResponse)
+async def run_code(request: RunCodeRequest):
+
+    payload = json.dumps({
+        "code": request.code,
+        "bucket_url": request.bucket_url
+    }).encode("utf-8")
+
+    loop = asyncio.get_running_loop()
+
+    # Run subprocess in a separate thread (Windows safe)
+    stdout, stderr = await loop.run_in_executor(
+        executor,
+        run_runner_subprocess,
+        payload
+    )
+
+    if not stdout:
+        raise HTTPException(500, f"Runner error: {stderr}")
+
+    try:
+        result = json.loads(stdout)
+    except Exception:
+        raise HTTPException(500, f"Invalid JSON from runner: {stdout}")
+
+    return RunCodeResponse(
+        output=result.get("output"),
+        error=result.get("error"),
+        images=result.get("images", []),
+        bucket_url=result.get("bucket_url", request.bucket_url),
+        csv_text=result.get("csv_text")
+    )

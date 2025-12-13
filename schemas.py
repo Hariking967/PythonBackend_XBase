@@ -1,6 +1,5 @@
 from pydantic import BaseModel
-from typing import List, Dict
-
+from typing import List, Dict, Optional
 
 class CreateFolderRequest(BaseModel):
     folder_name: str
@@ -94,3 +93,14 @@ class AskAISchema(BaseModel):
     query: str          
     chat_history: List  
     parent_id: str
+
+class RunCodeRequest(BaseModel):
+    code: str
+    bucket_url: str
+
+
+class RunCodeResponse(BaseModel):
+    output: Optional[str]
+    error: Optional[str]
+    images: List[str]
+    bucket_url: str
