@@ -93,6 +93,8 @@ class AskAISchema(BaseModel):
     query: str          
     chat_history: List  
     parent_id: str
+    # optional image_box can be provided by client; server will return images separately
+    
 
 class RunCodeRequest(BaseModel):
     code: str
@@ -104,3 +106,5 @@ class RunCodeResponse(BaseModel):
     error: Optional[str]
     images: List[str] | None = []
     bucket_url: str | None = None
+    # For ask_ai endpoint response extension
+    sql_res: Optional[List] = None

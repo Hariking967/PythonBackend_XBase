@@ -211,6 +211,39 @@ def execute_tool(tool_obj, args):
 
 
 # -----------------------------
+# CSV helpers for DEV_NEEDS
+# -----------------------------
+def _fetch_columns_for_table(table_name: str) -> list[str]:
+    try:
+        cols_res = run_sql(
+            f"SELECT column_name FROM information_schema.columns WHERE table_name = '{table_name}' ORDER BY ordinal_position;"
+        )
+        return [row[0] for row in cols_res] if cols_res else []
+    except Exception:
+        return []
+
+def _fetch_rows_for_table(table_name: str) -> list[tuple]:
+    try:
+        rows_res = run_sql(f"SELECT * FROM {table_name};")
+        return rows_res or []
+    except Exception:
+        return []
+
+def _to_csv(columns: list[str], rows: list[tuple]) -> str:
+    # Build a simple CSV string
+    if not columns:
+        if rows:
+            columns = [f"col{i+1}" for i in range(len(rows[0]))]
+        else:
+            columns = []
+    lines = []
+    lines.append(",".join(columns))
+    for r in rows:
+        lines.append(",".join(map(str, r)))
+    return "\n".join(lines)
+
+
+# -----------------------------
 # MAIN FUNCTION YOU ASKED FOR
 # -----------------------------
 def Ask_AI(db_info: str, parent_id: str, query: str, chat_history=None, permission: bool = True, image_box: list[str] | None = None):
@@ -226,6 +259,7 @@ def Ask_AI(db_info: str, parent_id: str, query: str, chat_history=None, permissi
         chat_history = []
     if image_box is None:
         image_box = []
+    sql_res: list | None = []
 
     # First LLM call
     response = CHAT_AGENT.invoke({
@@ -248,11 +282,12 @@ def Ask_AI(db_info: str, parent_id: str, query: str, chat_history=None, permissi
         final = getattr(response, "content", str(response))
         # store only one-line summary instead of full messages
         chat_history.append(summarise_interaction(query, final))
-        return final, chat_history, image_box
+        return final, chat_history, image_box, sql_res
 
     # If model requests tools, run them and summarize
     results_text = ""
     tool_messages = []  # collect ToolMessage objects
+    requested_sql_table = None
 
     for call in tool_calls:
         tool_name = call["name"]
@@ -274,6 +309,23 @@ def Ask_AI(db_info: str, parent_id: str, query: str, chat_history=None, permissi
         out = execute_tool(tool_obj, exec_args)
         results_text += f"[{tool_name} OUTPUT]:\n{out}\n\n"
 
+        # Collect SQL results: if Run_SQL returns rows, append; if 'Query executed' or None, append None
+        if tool_name == "Run_SQL":
+            # out may be a repr(list of tuples) or the text 'Query executed'
+            if isinstance(out, str) and out.strip() == "Query executed":
+                sql_res.append(None)
+            else:
+                # try to eval repr safely into Python object
+                try:
+                    parsed = out
+                    if isinstance(out, str):
+                        # attempt literal_eval when it's a repr of list/tuple
+                        import ast
+                        parsed = ast.literal_eval(out)
+                    sql_res.append(parsed)
+                except Exception:
+                    sql_res.append(None)
+
         # Create a ToolMessage that references the tool_call_id
         tool_messages.append(
             ToolMessage(
@@ -282,7 +334,31 @@ def Ask_AI(db_info: str, parent_id: str, query: str, chat_history=None, permissi
             )
         )
 
+        # Capture table name for DEV_NEEDS if available via SQL input
+        if "DEV_NEEDS" in query and tool_name == "Run_SQL":
+            sql_text = exec_args.get("input", "")
+            import re
+            m = re.search(r"FROM\s+([a-zA-Z0-9_]+)", sql_text, re.IGNORECASE)
+            if m:
+                requested_sql_table = m.group(1)
+
     # Second pass — include both the original assistant tool_call message and all tool messages
+    # If DEV_NEEDS is requested, return CSV-only output
+    if "DEV_NEEDS" in query:
+        # Try to extract current table from db_info if not found from SQL
+        table_name = requested_sql_table
+        if not table_name:
+            import re
+            m2 = re.search(r"Current table is\s+([a-zA-Z0-9_]+)", str(db_info))
+            if m2:
+                table_name = m2.group(1)
+
+        cols = _fetch_columns_for_table(table_name) if table_name else []
+        rows = _fetch_rows_for_table(table_name) if table_name else []
+        csv_text = _to_csv(cols, rows)
+        chat_history.append(summarise_interaction(query, "CSV returned"))
+        return csv_text, chat_history, image_box
+
     final = CHAT_AGENT.invoke({
         "input": f"Summarize what happened:\n{results_text}",
         "db_info": db_info,
@@ -292,7 +368,7 @@ def Ask_AI(db_info: str, parent_id: str, query: str, chat_history=None, permissi
 
     # store only one-line summary instead of full messages
     chat_history.append(summarise_interaction(query, final.content))
-    return final.content, chat_history, image_box
+    return final.content, chat_history, image_box, sql_res
 
 
 # -----------------------------

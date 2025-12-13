@@ -248,12 +248,13 @@ def ask_ai_endpoint(payload: AskAISchema):
     )
 
     # Return updated history as well so client can persist it
-    # Ask_AI now returns (final, chat_history, image_box)
-    final_text, updated_history, image_box = result
+    # Ask_AI now returns (final, chat_history, image_box, sql_res)
+    final_text, updated_history, image_box, sql_res = result
     return {
         "response": final_text,
         "chat_history": updated_history,
-        "images": image_box
+        "images": image_box,
+        "sql_res": sql_res
     }
 
 RUNNER_PATH = os.path.join(
