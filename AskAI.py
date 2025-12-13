@@ -108,7 +108,14 @@ def Run_SQL(parent_id: str, input: str) -> str:
             return "SECURITY ERROR: Failed to switch schema."
     try:
         res = run_sql(query=input)
-        return "Query executed" if res is None else repr(res)
+        # Return structured result instead of repr for easier downstream handling
+        if res is None:
+            return "Query executed"
+        # Convert rows to plain Python lists (JSON-serializable) if iterable
+        try:
+            return [list(r) for r in res]
+        except Exception:
+            return res
     except Exception:
         return "SQL error:\n" + traceback.format_exc()
 
@@ -244,6 +251,18 @@ def _to_csv(columns: list[str], rows: list[tuple]) -> str:
 
 
 # -----------------------------
+# Schema helper for fallbacks
+# -----------------------------
+def _set_search_path(parent_id: str):
+    try:
+        target = "schema" + parent_id.replace('-', '_')
+        run_sql(f"CREATE SCHEMA IF NOT EXISTS {target}")
+        run_sql(f"SET search_path TO {target}")
+    except Exception:
+        pass
+
+
+# -----------------------------
 # MAIN FUNCTION YOU ASKED FOR
 # -----------------------------
 def Ask_AI(db_info: str, parent_id: str, query: str, chat_history=None, permission: bool = True, image_box: list[str] | None = None):
@@ -275,7 +294,7 @@ def Ask_AI(db_info: str, parent_id: str, query: str, chat_history=None, permissi
     if permission is False:
         final = getattr(response, "content", str(response))
         chat_history.append(summarise_interaction(query, final))
-        return final, chat_history, image_box
+        return final, chat_history, image_box, sql_res
 
     # If model didn't request any tool → return final answer
     if not tool_calls:
@@ -311,19 +330,35 @@ def Ask_AI(db_info: str, parent_id: str, query: str, chat_history=None, permissi
 
         # Collect SQL results: if Run_SQL returns rows, append; if 'Query executed' or None, append None
         if tool_name == "Run_SQL":
-            # out may be a repr(list of tuples) or the text 'Query executed'
+            # Normalize SQL output into sql_res list accurately
             if isinstance(out, str) and out.strip() == "Query executed":
-                sql_res.append(None)
+                # Fallback: if the SQL looks like a SELECT, try fetching rows directly
+                sql_text = exec_args.get("input", "")
+                import re
+                if re.match(r"^\s*select\b", sql_text, re.IGNORECASE):
+                    m = re.search(r"from\s+([a-zA-Z0-9_]+)", sql_text, re.IGNORECASE)
+                    table = m.group(1) if m else None
+                    if table:
+                        # ensure correct schema then fetch
+                        _set_search_path(parent_id)
+                        rows = _fetch_rows_for_table(table) or []
+                        sql_res.append([list(r) for r in rows])
+                    else:
+                        sql_res.append(None)
+                else:
+                    sql_res.append(None)
+            elif isinstance(out, (list, tuple)):
+                sql_res.append(out)
             else:
-                # try to eval repr safely into Python object
-                try:
-                    parsed = out
-                    if isinstance(out, str):
-                        # attempt literal_eval when it's a repr of list/tuple
+                # try to eval repr safely into Python object when it's a string
+                if isinstance(out, str):
+                    try:
                         import ast
                         parsed = ast.literal_eval(out)
-                    sql_res.append(parsed)
-                except Exception:
+                        sql_res.append(parsed)
+                    except Exception:
+                        sql_res.append(None)
+                else:
                     sql_res.append(None)
 
         # Create a ToolMessage that references the tool_call_id
@@ -357,7 +392,7 @@ def Ask_AI(db_info: str, parent_id: str, query: str, chat_history=None, permissi
         rows = _fetch_rows_for_table(table_name) if table_name else []
         csv_text = _to_csv(cols, rows)
         chat_history.append(summarise_interaction(query, "CSV returned"))
-        return csv_text, chat_history, image_box
+        return csv_text, chat_history, image_box, sql_res
 
     final = CHAT_AGENT.invoke({
         "input": f"Summarize what happened:\n{results_text}",
