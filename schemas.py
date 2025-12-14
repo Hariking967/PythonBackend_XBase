@@ -108,3 +108,14 @@ class RunCodeResponse(BaseModel):
     bucket_url: str | None = None
     # For ask_ai endpoint response extension
     sql_res: Optional[List] = None
+
+# -----------------------------
+# New: Sync data fetch schemas
+# -----------------------------
+class GetColumnsRequest(BaseModel):
+    parent_id: str
+    table_name: str
+
+class GetRowsRequest(BaseModel):
+    parent_id: str
+    table_name: str

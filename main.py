@@ -31,11 +31,13 @@ from schemas import (
     InsertRowWithTableRequest, UpdateRowWithTableRequest, DeleteRowWithTableRequest,
     AddColumnWithTableRequest, DeleteColumnWithTableRequest, DeleteTableRequest,
     GetFilesRequest, GetFoldersRequest,
-    FilesCreateRequest, AskAISchema  # added
+    FilesCreateRequest, AskAISchema,  # added
+    GetColumnsRequest, GetRowsRequest
 )
 from ConnectToDB import AsyncSessionLocal
 from models import File, Folder
 from runner import run_any
+from RunSQL import run_sql
 
 app = FastAPI(title="XBASE API", version="1.0")
 
@@ -312,3 +314,51 @@ async def run_code(request: RunCodeRequest):
         bucket_url=result.get("bucket_url", request.bucket_url),
         csv_text=result.get("csv_text")
     )
+
+# -------------------------------------------------------
+# GET COLUMNS (SYNC via SYNC_DATABASE_URL)
+# -------------------------------------------------------
+@app.post("/getColumns")
+def get_columns(req: GetColumnsRequest):
+    import re
+    # sanitize table name to avoid injection in f-string
+    if not re.match(r"^[A-Za-z0-9_]+$", req.table_name):
+        raise HTTPException(status_code=400, detail="Invalid table_name")
+
+    # derive schema name (consistent with existing pattern)
+    schema_name = "schema" + req.parent_id.replace('-', '_')
+
+    # set schema and fetch column names
+    run_sql(f"CREATE SCHEMA IF NOT EXISTS {schema_name}")
+    run_sql(f"SET search_path TO {schema_name}")
+
+    cols = run_sql(
+        f"SELECT column_name FROM information_schema.columns "
+        f"WHERE table_schema = current_schema() AND table_name = '{req.table_name}' "
+        f"ORDER BY ordinal_position;"
+    ) or []
+
+    return {"columns": [c[0] for c in cols]}
+
+
+# -------------------------------------------------------
+# GET ROWS (SYNC via SYNC_DATABASE_URL)
+# -------------------------------------------------------
+@app.post("/getRows")
+def get_rows(req: GetRowsRequest):
+    import re
+    if not re.match(r"^[A-Za-z0-9_]+$", req.table_name):
+        raise HTTPException(status_code=400, detail="Invalid table_name")
+
+    schema_name = "schema" + req.parent_id.replace('-', '_')
+    run_sql(f"CREATE SCHEMA IF NOT EXISTS {schema_name}")
+    run_sql(f"SET search_path TO {schema_name}")
+
+    rows = run_sql(f"SELECT * FROM {req.table_name};") or []
+    # convert tuples to lists for JSON serialization
+    try:
+        rows_list = [list(r) for r in rows]
+    except Exception:
+        rows_list = rows
+
+    return {"rows": rows_list}
