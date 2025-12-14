@@ -138,8 +138,7 @@ prompt = ChatPromptTemplate.from_messages([
         "When summarizing tool results, absolutely do not call any tools. Return plain text only.\n"
         "{context}\n"
         "\nIMPORTANT:\n"
-        "- Inlcude include the exact SQL command you intend to run in your reply, even if tools are disabled or execution is not confirmed.\n"
-        "VERY IMPORTANT: If the user query contains the string 'DEV_NEEDS' then do not return anything other than the properly formatted csv, no natural language, no sql queries ONLY pure data should be returned as a list"
+        "- Include the exact SQL command you intend to run in your reply, even if tools are disabled or execution is not confirmed.\n"
         "- Do NOT execute any SQL until the user explicitly confirms.\n"
         "- Confirmation flow:\n"
         "  1) First, present the exact SQL command you intend to run and ask: \"Do you want me to run this SQL? (Accept/Decline)\".\n"
@@ -378,21 +377,7 @@ def Ask_AI(db_info: str, parent_id: str, query: str, chat_history=None, permissi
                 requested_sql_table = m.group(1)
 
     # Second pass — include both the original assistant tool_call message and all tool messages
-    # If DEV_NEEDS is requested, return CSV-only output
-    if "DEV_NEEDS" in query:
-        # Try to extract current table from db_info if not found from SQL
-        table_name = requested_sql_table
-        if not table_name:
-            import re
-            m2 = re.search(r"Current table is\s+([a-zA-Z0-9_]+)", str(db_info))
-            if m2:
-                table_name = m2.group(1)
-
-        cols = _fetch_columns_for_table(table_name) if table_name else []
-        rows = _fetch_rows_for_table(table_name) if table_name else []
-        csv_text = _to_csv(cols, rows)
-        chat_history.append(summarise_interaction(query, "CSV returned"))
-        return csv_text, chat_history, image_box, sql_res
+    # DEV_NEEDS behavior removed: always follow confirmation flow and show SQL
 
     final = CHAT_AGENT.invoke({
         "input": f"Summarize what happened:\n{results_text}",
