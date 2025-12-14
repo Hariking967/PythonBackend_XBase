@@ -50,7 +50,7 @@ def Run_Python(bucket_url: str, input: str, image_box: list[str] | None = None) 
     """
     try:
         resp = requests.post(
-            "https://pythonbackend-xbase.onrender.com",
+            "https://pythonbackend-xbase.onrender.com/run",
             json={"code": input, "bucket_url": bucket_url},
             timeout=30,
         )
