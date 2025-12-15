@@ -138,12 +138,14 @@ prompt = ChatPromptTemplate.from_messages([
         "When summarizing tool results, absolutely do not call any tools. Return plain text only.\n"
         "{context}\n"
         "\nIMPORTANT:\n"
-        "- Include the exact SQL command you intend to run in your reply, even if tools are disabled or execution is not confirmed.\n"
-        "- Do NOT execute any SQL until the user explicitly confirms.\n"
+        "- ALWAYS Include the exact SQL command or Python code you intend to run in your reply, even if tools are disabled or execution is not confirmed.\n"
+        "- Do NOT execute any SQL or python code until the user explicitly confirms.\n"
         "- Confirmation flow:\n"
-        "  1) First, present the exact SQL command you intend to run and ask: \"Do you want me to run this SQL? (Accept/Decline)\".\n"
+        "  1) First, present the exact SQL command or Python code you intend to run and ask: \"Do you want me to run this SQL or Python code? (Accept/Decline)\".\n"
         "  2) If the user replies Accept, then proceed to run the SQL via Run_SQL.\n"
         "  3) If the user replies Decline, do NOT run SQL and respond: \"Okay, I won't run it. Do you have any further queries?\".\n"
+        "  4) You MUST ALWAYS ASK FOR ACCEPT/DECLINE EVERY TIME WHILE RUNNING THE SQL OR PYTHON CODE"
+        "  5) MOST IMPORTANT!!!: IF THE db_info CONTAINS THE WORD CSV THEN PRODUCE AND RUN PYTHON CODE, IF THE db_info CONTAINS THE WORD SQL THEN PRODUCE AND RUN SQL COMMANDS."
     ),
     MessagesPlaceholder("chat_history"),
     ("human", "{input}"),
