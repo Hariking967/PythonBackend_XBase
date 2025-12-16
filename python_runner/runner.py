@@ -504,12 +504,20 @@
 #             "bucket_url": None
 #         }), flush=True)
 
-
 # runner.py
 # Industry-grade, Render-safe, JSON-pure execution runner
 
 # ---------------------------------------------------------
-# CRITICAL: Silence all logs BEFORE any imports
+# CRITICAL: Capture stdout IMMEDIATELY (before any imports)
+# ---------------------------------------------------------
+import sys
+import io
+
+_ORIGINAL_STDOUT = sys.stdout
+sys.stdout = io.StringIO()  # swallow ALL accidental prints
+
+# ---------------------------------------------------------
+# Silence logging globally
 # ---------------------------------------------------------
 import logging
 logging.getLogger().setLevel(logging.CRITICAL)
@@ -520,8 +528,6 @@ for name in ("supabase", "httpx", "storage3"):
 # Standard library imports
 # ---------------------------------------------------------
 import json
-import sys
-import io
 import traceback
 import base64
 import os
@@ -544,7 +550,7 @@ _RAW_SUPABASE_URL = os.getenv(
     "https://fzhnmrpzumoqpcfciatk.supabase.co/"
 )
 
-# Ensure trailing slash (Supabase SDK REQUIREMENT)
+# Supabase SDK REQUIRES trailing slash
 SUPABASE_URL = (
     _RAW_SUPABASE_URL
     if _RAW_SUPABASE_URL.endswith("/")
@@ -563,7 +569,7 @@ def get_supabase():
     return create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
 # ---------------------------------------------------------
-# Extract matplotlib figures (safe, optional)
+# Extract matplotlib figures safely
 # ---------------------------------------------------------
 def extract_images():
     try:
@@ -591,7 +597,7 @@ def smart_csv_to_df(csv_text: str):
     if not csv_text or not csv_text.strip():
         return None
 
-    # Remove BOM if present
+    # Remove BOM
     if csv_text.startswith("\ufeff"):
         csv_text = csv_text.encode().decode("utf-8-sig")
 
@@ -684,7 +690,7 @@ def run_code(code: str, bucket_url: str):
     }
 
 # ---------------------------------------------------------
-# ENTRY POINT — JSON ONLY, NO EXTRA OUTPUT
+# ENTRY POINT — JSON ONLY, NOTHING ELSE
 # ---------------------------------------------------------
 if __name__ == "__main__":
     try:
@@ -695,11 +701,13 @@ if __name__ == "__main__":
             payload.get("bucket_url", "")
         )
 
-        # CRITICAL: print JSON once, no extra chars
+        # Restore stdout and emit PURE JSON
+        sys.stdout = _ORIGINAL_STDOUT
         sys.stdout.write(json.dumps(result))
         sys.stdout.flush()
 
     except Exception:
+        sys.stdout = _ORIGINAL_STDOUT
         sys.stdout.write(json.dumps({
             "output": None,
             "error": traceback.format_exc(),
