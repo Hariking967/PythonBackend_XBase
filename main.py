@@ -231,33 +231,89 @@ async def api_create_file(body: FilesCreateRequest):
         },
     }
 
+# @app.post("/ask_ai")
+# def ask_ai_endpoint(payload: AskAISchema):
+#     """
+#     FastAPI endpoint that wraps your Ask_AI() function.
+#     Accepts db_info, query, chat_history.
+#     Returns the AI's response and the updated chat_history.
+#     """
+
+#     # Ensure chat_history is a list (FastAPI will give none if not provided)
+#     history = payload.chat_history or []
+
+#     result = Ask_AI(
+#         db_info=payload.db_info,
+#         query=payload.query,
+#         chat_history=history,
+#         parent_id=payload.parent_id
+#     )
+
+#     # Return updated history as well so client can persist it
+#     # Ask_AI now returns (final, chat_history, image_box, sql_res)
+#     final_text, updated_history, image_box, sql_res = result
+#     return {
+#         "response": final_text,
+#         "chat_history": updated_history,
+#         "images": image_box,
+#         "sql_res": sql_res
+#     }
+
 @app.post("/ask_ai")
 def ask_ai_endpoint(payload: AskAISchema):
     """
-    FastAPI endpoint that wraps your Ask_AI() function.
-    Accepts db_info, query, chat_history.
-    Returns the AI's response and the updated chat_history.
+    AI query endpoint.
+
+    Expects:
+    - db_info
+    - query
+    - chat_history (optional)
+    - parent_id
+
+    Returns:
+    - response (str)
+    - chat_history (list)
+    - images (list)
+    - sql_res (any)
     """
 
-    # Ensure chat_history is a list (FastAPI will give none if not provided)
-    history = payload.chat_history or []
+    try:
+        # Normalize history
+        history = payload.chat_history or []
 
-    result = Ask_AI(
-        db_info=payload.db_info,
-        query=payload.query,
-        chat_history=history,
-        parent_id=payload.parent_id
-    )
+        # Call core AI logic
+        result = Ask_AI(
+            db_info=payload.db_info,
+            query=payload.query,
+            chat_history=history,
+            parent_id=payload.parent_id
+        )
 
-    # Return updated history as well so client can persist it
-    # Ask_AI now returns (final, chat_history, image_box, sql_res)
-    final_text, updated_history, image_box, sql_res = result
-    return {
-        "response": final_text,
-        "chat_history": updated_history,
-        "images": image_box,
-        "sql_res": sql_res
-    }
+        # ---- MANUAL UNPACKING (EXPLICIT & SAFE) ----
+        final_text, updated_history, image_box, sql_res, _ = result
+
+        return {
+            "response": final_text,
+            "chat_history": updated_history,
+            "images": image_box,
+            "sql_res": sql_res
+        }
+
+    except ValueError as e:
+        # Contract mismatch / unpacking error
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ask_AI return contract mismatch: {str(e)}"
+        )
+
+    except Exception as e:
+        # Any other runtime error inside Ask_AI
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ask_AI execution failed: {str(e)}"
+        )
 
 RUNNER_PATH = os.path.join(
     os.path.dirname(__file__),
