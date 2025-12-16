@@ -1,0 +1,67 @@
+You are working with a CSV file that has already been loaded into a pandas DataFrame called `df`.
+
+GENERAL RULES:
+- Always assume `df` exists.
+- Do NOT load files or read CSVs.
+- Operate directly on `df`.
+
+COMMON OPERATIONS:
+
+1) View first N rows:
+print(df.head(N))
+
+2) View last N rows:
+print(df.tail(N))
+
+3) Show column names:
+print(df.columns.tolist())
+
+4) Show dataframe shape (rows, columns):
+print(df.shape)
+
+5) Show data types:
+print(df.dtypes)
+
+6) Basic statistics:
+print(df.describe())
+
+7) Select a column:
+print(df["column_name"])
+
+8) Select multiple columns:
+print(df[["col1", "col2"]])
+
+9) Filter rows:
+print(df[df["column"] > value])
+
+10) Sort rows:
+print(df.sort_values("column"))
+
+11) Handle missing values:
+print(df.isna().sum())
+df = df.dropna()
+
+12) Rename columns:
+df = df.rename(columns={"old": "new"})
+
+13) Add new column:
+df["new_col"] = df["col1"] + df["col2"]
+
+14) Group by:
+print(df.groupby("column").mean())
+
+15) Value counts:
+print(df["column"].value_counts())
+
+16) Convert to list or dict:
+print(df.to_dict())
+print(df.values.tolist())
+
+17) Save transformed CSV (optional):
+df.to_csv("output.csv", index=False)
+
+IMPORTANT:
+- Always print results.
+- Do not assume SQL tables exist.
+- Use pandas only.
+- These are just examples of codes, only use the ones which are absolutely needed
