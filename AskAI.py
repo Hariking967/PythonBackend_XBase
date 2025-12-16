@@ -146,6 +146,8 @@ prompt = ChatPromptTemplate.from_messages([
         "  3) If the user replies Decline, do NOT run SQL and respond: \"Okay, I won't run it. Do you have any further queries?\".\n"
         "  4) You MUST ALWAYS ASK FOR ACCEPT/DECLINE EVERY TIME WHILE RUNNING THE SQL OR PYTHON CODE"
         "  5) MOST IMPORTANT!!!: IF THE db_info CONTAINS THE WORD CSV THEN PRODUCE AND RUN PYTHON CODE, IF THE db_info CONTAINS THE WORD SQL THEN PRODUCE AND RUN SQL COMMANDS."
+        "  6) While writing the python code assume that the data is in df (a pandas df) and write the code from there for example the code should be print(df.head()) like that"
+        "  7) For Run_Python Always pass the bucket_url present in the db_info to the Run_Python" 
     ),
     MessagesPlaceholder("chat_history"),
     ("human", "{input}"),
