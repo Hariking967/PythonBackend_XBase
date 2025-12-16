@@ -96,18 +96,31 @@ class AskAISchema(BaseModel):
     # optional image_box can be provided by client; server will return images separately
     
 
+# class RunCodeRequest(BaseModel):
+#     code: str
+#     bucket_url: str
+
+
+# class RunCodeResponse(BaseModel):
+#     output: Optional[str]
+#     error: Optional[str]
+#     images: List[str] | None = []
+#     bucket_url: str | None = None
+#     # For ask_ai endpoint response extension
+#     sql_res: Optional[List] = None
+
 class RunCodeRequest(BaseModel):
     code: str
     bucket_url: str
 
 
 class RunCodeResponse(BaseModel):
-    output: Optional[str]
-    error: Optional[str]
-    images: List[str] | None = []
-    bucket_url: str | None = None
-    # For ask_ai endpoint response extension
+    output: Optional[str] = None
+    error: Optional[str] = None
+    images: List[str] = Field(default_factory=list)
+    bucket_url: Optional[str] = None
     sql_res: Optional[List] = None
+
 
 # -----------------------------
 # New: Sync data fetch schemas

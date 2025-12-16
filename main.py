@@ -282,9 +282,40 @@ def run_runner_subprocess(payload: bytes):
     return stdout.decode("utf-8").strip(), stderr.decode("utf-8").strip()
 
 
+# @app.post("/run", response_model=RunCodeResponse)
+# async def run_code(request: RunCodeRequest):
+
+#     payload = json.dumps({
+#         "code": request.code,
+#         "bucket_url": request.bucket_url
+#     }).encode("utf-8")
+
+#     loop = asyncio.get_running_loop()
+
+#     # Run subprocess in a separate thread (Windows safe)
+#     stdout, stderr = await loop.run_in_executor(
+#         executor,
+#         run_runner_subprocess,
+#         payload
+#     )
+
+#     if not stdout:
+#         raise HTTPException(500, f"Runner error: {stderr}")
+
+#     try:
+#         result = json.loads(stdout)
+#     except Exception:
+#         raise HTTPException(500, f"Invalid JSON from runner: {stdout}")
+
+#     return RunCodeResponse(
+#         output=result.get("output"),
+#         error=result.get("error"),
+#         images=result.get("images", []),
+#         bucket_url=result.get("bucket_url", request.bucket_url),
+#         csv_text=result.get("csv_text")
+#     )
 @app.post("/run", response_model=RunCodeResponse)
 async def run_code(request: RunCodeRequest):
-
     payload = json.dumps({
         "code": request.code,
         "bucket_url": request.bucket_url
@@ -292,7 +323,6 @@ async def run_code(request: RunCodeRequest):
 
     loop = asyncio.get_running_loop()
 
-    # Run subprocess in a separate thread (Windows safe)
     stdout, stderr = await loop.run_in_executor(
         executor,
         run_runner_subprocess,
@@ -300,19 +330,28 @@ async def run_code(request: RunCodeRequest):
     )
 
     if not stdout:
-        raise HTTPException(500, f"Runner error: {stderr}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Runner produced no output. stderr:\n{stderr}"
+        )
 
     try:
         result = json.loads(stdout)
-    except Exception:
-        raise HTTPException(500, f"Invalid JSON from runner: {stdout}")
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Invalid JSON from runner.\n"
+                f"stdout:\n{stdout}\n\nstderr:\n{stderr}"
+            )
+        )
 
     return RunCodeResponse(
         output=result.get("output"),
-        error=result.get("error"),
-        images=result.get("images", []),
+        error=result.get("error") or stderr or None,
+        images=result.get("images") or [],
         bucket_url=result.get("bucket_url", request.bucket_url),
-        csv_text=result.get("csv_text")
+        sql_res=None
     )
 
 # -------------------------------------------------------
